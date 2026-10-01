@@ -139,7 +139,7 @@
 </script>
 <script>
   const $ = (id) => document.getElementById(id);
-  const GROUP = 'group', CHUNK = 64 * 1024;
+  const GROUP = 'group', CHUNK = 64 * 1024, BLOCK = 8 * 1024 * 1024;
   const rid = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
 
   let cid = localStorage.getItem('lanweb-cid');
@@ -159,7 +159,6 @@
   const unread = {};
   const peers = new Map();         // cid -> { name, device, pid, conn, online }
   const conns = new Map();         // peer id -> DataConnection
-  const incoming = new Map();      // file id -> in-progress download
 
   const cleanRoom = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
   const hostId = () => `lanchat-v1-${room}`;
@@ -215,7 +214,7 @@
   function destroyPeer() { try { peer && peer.destroy(); } catch {} conns.clear(); }
 
   function wirePeer(p) {
-    p.on('connection', (c) => setup(c));
+    p.on('connection', (c) => (c.metadata && c.metadata.kind === 'file' ? receiveFile(c) : setup(c)));
     p.on('disconnected', () => { try { p.reconnect(); } catch {} });
   }
   function peerError(err) {
@@ -259,7 +258,6 @@
     c.on('data', (d) => onData(c, d));
     const gone = () => {
       if (conns.get(c.peer) === c) conns.delete(c.peer);
-      for (const [fid, f] of incoming) if (f.cid === c.__cid) incoming.delete(fid);
       const p = peers.get(c.__cid);
       if (p && p.conn === c) {
         p.online = false; p.conn = null;
@@ -304,21 +302,7 @@
       const text = String(d.text || '').slice(0, 2000);
       if (!text) return;
       addMsg(d.to ? c.__cid : GROUP, { type: 'msg', from: from.name, fromId: c.__cid, to: d.to || null, text, time: Number(d.time) || Date.now() });
-    } else if (d.t === 'file-start') {
-      if (d.to && d.to !== me.cid) return;
-      incoming.set(d.fid, { cid: c.__cid, to: d.to || null, name: String(d.name || 'file').slice(0, 150), size: Number(d.size) || 0, got: 0, parts: [] });
-    } else if (d.t === 'file-chunk') {
-      const f = incoming.get(d.fid);
-      if (!f || f.cid !== c.__cid || !d.data) return;
-      f.parts.push(d.data);
-      f.got += d.data.byteLength;
-      setTransfer(`Receiving ${f.name}… ${f.size ? Math.round((f.got / f.size) * 100) : 0}%`);
-    } else if (d.t === 'file-end') {
-      const f = incoming.get(d.fid);
-      if (!f || f.cid !== c.__cid) return;
-      incoming.delete(d.fid);
-      setTransfer('');
-      addMsg(f.to ? c.__cid : GROUP, { type: 'file', from: from.name, fromId: c.__cid, to: f.to, name: f.name, size: f.got, time: Date.now(), url: URL.createObjectURL(new Blob(f.parts)) });
+
     }
   }
 
@@ -502,33 +486,81 @@
     if (!$('attach').disabled) sendFiles([...e.dataTransfer.files]);
   });
 
-  function drained(conn) {
-    return new Promise((resolve) => {
-      const dc = conn.dataChannel;
-      if (!dc || dc.bufferedAmount < 4e6) return resolve();
-      const iv = setInterval(() => {
-        if (dc.bufferedAmount < 1e6 || dc.readyState !== 'open') { clearInterval(iv); resolve(); }
-      }, 50);
+  // Each file travels on its own raw data channel (no packing), written straight to the browser's
+  // channel with back-pressure, in 64 KB pieces. This is much faster than sending through PeerJS messages.
+  function sendFileTo(p, f, to, onProgress) {
+    return new Promise((resolve, reject) => {
+      const c = peer.connect(p.pid, { serialization: 'raw', reliable: true, metadata: { kind: 'file', name: f.name, size: f.size, to } });
+      const timer = setTimeout(() => { c.close(); reject(new Error('timeout')); }, 15000);
+      c.on('error', reject);
+      c.on('open', async () => {
+        clearTimeout(timer);
+        const rtc = c.dataChannel;
+        rtc.bufferedAmountLowThreshold = 1 << 20;
+        const low = () => new Promise((r) => rtc.addEventListener('bufferedamountlow', r, { once: true }));
+        try {
+          let sent = 0;
+          for (let off = 0; off < f.size; off += BLOCK) {
+            const block = await f.slice(off, off + BLOCK).arrayBuffer();
+            for (let i = 0; i < block.byteLength; i += CHUNK) {
+              if (rtc.readyState !== 'open') throw new Error('closed');
+              if (rtc.bufferedAmount > 8 << 20) await low();
+              const view = new Uint8Array(block, i, Math.min(CHUNK, block.byteLength - i));
+              rtc.send(view);
+              sent += view.byteLength;
+              onProgress(Math.max(0, sent - rtc.bufferedAmount));
+            }
+          }
+          while (rtc.bufferedAmount > 0 && rtc.readyState === 'open') await new Promise((r) => setTimeout(r, 50));
+          if (c.open) await new Promise((r) => { c.on('close', r); setTimeout(r, 5000); });
+          c.close();
+          resolve();
+        } catch (e) { c.close(); reject(e); }
+      });
     });
+  }
+
+  function receiveFile(c) {
+    const meta = c.metadata || {};
+    const entry = [...peers.entries()].find(([, p]) => p.pid === c.peer);
+    const name = String(meta.name || 'file').slice(0, 150);
+    const size = Number(meta.size) || 0;
+    const to = meta.to || null;
+    if (!entry || !size || (to && to !== me.cid)) { c.close(); return; }
+    const [fromCid, from] = entry;
+    const parts = [];
+    let got = 0, last = 0, done = false;
+    c.on('data', (buf) => {
+      if (done || !(buf instanceof ArrayBuffer || ArrayBuffer.isView(buf))) return;
+      parts.push(buf);
+      got += buf.byteLength;
+      const now = Date.now();
+      if (now - last > 150 && got < size) { last = now; setTransfer(`Receiving ${name}… ${Math.round((got / size) * 100)}%`); }
+      if (got >= size) {
+        done = true;
+        setTransfer('');
+        addMsg(to ? fromCid : GROUP, { type: 'file', from: from.name, fromId: fromCid, to, name, size: got, time: Date.now(), url: URL.createObjectURL(new Blob(parts)) });
+        setTimeout(() => c.close(), 300);
+      }
+    });
+    c.on('close', () => { if (!done) { setTransfer(''); note(`Receiving ${name} was interrupted.`, true); } });
   }
 
   async function sendFiles(files) {
     const key = active, to = active === GROUP ? null : active;
     for (const f of files) {
+      if (!f.size) { note(`${f.name} is empty and was skipped.`, true); continue; }
       const live = targets(to);
       if (!live.length) { note(to ? 'That device is offline.' : 'Nobody else is here yet.', true); break; }
-      try {
-        const fid = rid(8);
-        live.forEach((p) => p.conn.send({ t: 'file-start', fid, to, name: f.name, size: f.size }));
-        for (let off = 0; off < f.size; off += CHUNK) {
-          const buf = await f.slice(off, off + CHUNK).arrayBuffer();
-          for (const p of live) { await drained(p.conn); if (p.conn.open) p.conn.send({ t: 'file-chunk', fid, data: buf }); }
-          setTransfer(`Sending ${f.name}… ${Math.round((Math.min(off + CHUNK, f.size) / f.size) * 100)}%`);
-        }
-        live.forEach((p) => p.conn.open && p.conn.send({ t: 'file-end', fid }));
+      let last = 0;
+      const progress = (n) => {
+        const now = Date.now();
+        if (now - last > 150) { last = now; setTransfer(`Sending ${f.name}… ${Math.round((n / f.size) * 100)}%`); }
+      };
+      const results = await Promise.allSettled(live.map((p, i) => sendFileTo(p, f, to, i === 0 ? progress : () => {})));
+      results.forEach((r, i) => { if (r.status === 'rejected') note(`Could not send ${f.name} to ${live[i].name}.`, true); });
+      if (results.some((r) => r.status === 'fulfilled')) {
         addMsg(key, { type: 'file', from: me.name, fromId: me.cid, to, name: f.name, size: f.size, time: Date.now(), url: URL.createObjectURL(f) });
-      } catch (err) {
-        note(`Could not send ${f.name}.`, true);
       }
     }
     setTransfer('');
