@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>LAN Chat (serverless)</title>
+<style>
+  :root {
+    --bg: #0d0b1a; --panel: #16132b; --panel2: #1e1a3a; --ink: #f1ecff; --muted: #9b94c4;
+    --line: #2b2650; --on: #2ee6a6; --grad: linear-gradient(135deg, #7c5cff 0%, #d95cff 55%, #ff5fa2 100%);
+    --accent: #a07bff; --theirs: #221e42; --glow: 0 0 0 1px rgba(160,123,255,.35), 0 8px 30px rgba(124,92,255,.25);
+    --danger: #ff6b8a;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f1ff; --panel: #ffffff; --panel2: #ece7ff; --ink: #1d1740; --muted: #6d669a; --line: #ddd6fb;
+      --accent: #6d46f0; --theirs: #ffffff; --glow: 0 0 0 1px rgba(109,70,240,.25), 0 8px 24px rgba(109,70,240,.15);
+      --danger: #d6335f;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 16px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink);
+    background: radial-gradient(60rem 40rem at 90% -10%, rgba(124,92,255,.22), transparent 60%),
+                radial-gradient(50rem 40rem at -10% 110%, rgba(255,95,162,.16), transparent 60%), var(--bg);
+    background-attachment: fixed;
+  }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* Join screen */
+  #join { height: 100%; display: grid; place-items: center; padding: 1rem; }
+  #join form { width: min(23rem, 100%); display: grid; gap: .85rem; padding: 1.75rem; background: var(--panel); border-radius: 20px; box-shadow: var(--glow); }
+  #join h1 { margin: 0; font-size: 2rem; letter-spacing: -.02em; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #join p { margin: 0; color: var(--muted); }
+  input[type=text] { width: 100%; padding: .75rem .9rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel2); }
+  input[type=text]::placeholder { color: var(--muted); }
+  input[type=text]:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(160,123,255,.25); }
+  button.primary { padding: .75rem 1.2rem; border: 0; border-radius: 12px; background: var(--grad); color: #fff; font-weight: 700; cursor: pointer; transition: transform .12s, filter .12s; }
+  button.primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  button.ghost { padding: .7rem .95rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel2); cursor: pointer; transition: border-color .12s; }
+  button.ghost:hover { border-color: var(--accent); }
+  button:disabled, input:disabled { opacity: .45; cursor: not-allowed; transform: none !important; }
+
+  /* Layout */
+  #app { height: 100%; display: none; grid-template-columns: 18rem 1fr; gap: .75rem; padding: .75rem; }
+  #side, #main { background: var(--panel); border-radius: 20px; border: 1px solid var(--line); min-height: 0; }
+  #side { padding: .75rem; overflow-y: auto; display: flex; flex-direction: column; gap: .3rem; }
+  #side h2 { margin: .7rem .5rem .1rem; font-size: .85rem; font-weight: 600; color: var(--muted); }
+  .who { display: flex; align-items: center; gap: .65rem; padding: .6rem; margin-bottom: .3rem; border-radius: 14px; background: var(--panel2); }
+  .who .txt { display: flex; flex-direction: column; min-width: 0; }
+  .who small, .item .ip { font-size: .8rem; color: var(--muted); }
+  .av { flex: none; width: 2.3rem; height: 2.3rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; font-size: .95rem; position: relative; }
+  .av.grp { background: var(--grad); font-size: .75rem; }
+  .av.live::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: .7rem; height: .7rem; border-radius: 50%; background: var(--on); border: 2px solid var(--panel); }
+  .item { display: flex; align-items: center; gap: .65rem; width: 100%; text-align: left; padding: .5rem .6rem; border: 0; border-radius: 14px; background: transparent; cursor: pointer; transition: background .12s; }
+  .item:hover { background: var(--panel2); }
+  .item[aria-current=true] { background: var(--panel2); box-shadow: inset 3px 0 0 var(--accent); }
+  .item.off { opacity: .55; }
+  .item .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .item .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { background: var(--grad); color: #fff; font-size: .75rem; font-weight: 700; min-width: 1.4rem; text-align: center; padding: .1rem .45rem; border-radius: 999px; }
+  .join-info { margin-top: auto; padding: .75rem .6rem .25rem; font-size: .8rem; color: var(--muted); overflow-wrap: anywhere; }
+  .join-info b { color: var(--ink); font-weight: 600; }
+
+  #main { display: grid; grid-template-rows: auto 1fr auto auto; overflow: hidden; }
+  #head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1.1rem; border-bottom: 1px solid var(--line); }
+  #head b { display: block; font-size: 1.05rem; }
+  #head small { color: var(--muted); }
+  #clear { padding: .4rem .75rem; font-size: .85rem; }
+  #log { overflow-y: auto; padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .6rem; }
+  #log.drop { outline: 2px dashed var(--accent); outline-offset: -10px; }
+  .row { display: flex; align-items: flex-end; gap: .55rem; }
+  .row.mine { flex-direction: row-reverse; }
+  .row .av { width: 1.9rem; height: 1.9rem; font-size: .8rem; }
+  .msg { max-width: min(36rem, 80%); padding: .55rem .85rem; border-radius: 18px 18px 18px 6px; background: var(--theirs); border: 1px solid var(--line); overflow-wrap: anywhere; }
+  .row.mine .msg { border-radius: 18px 18px 6px 18px; background: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--glow); }
+  .msg .meta { font-size: .75rem; opacity: .75; margin-bottom: .1rem; }
+  .msg a.file { display: flex; align-items: center; gap: .5rem; color: inherit; font-weight: 600; text-decoration: none; }
+  .msg a.file::before { content: "⬇"; display: grid; place-items: center; flex: none; width: 1.8rem; height: 1.8rem; border-radius: 8px; background: rgba(160,123,255,.25); }
+  .row.mine .msg a.file::before { background: rgba(255,255,255,.25); }
+  .msg a.file:hover span { text-decoration: underline; }
+  .msg .size { font-size: .8rem; opacity: .75; }
+  .sys { align-self: center; font-size: .8rem; color: var(--muted); padding: .15rem .7rem; border-radius: 999px; background: var(--panel2); }
+  .err { color: var(--danger); }
+  #status { padding: 0 1.1rem; min-height: 1.5rem; font-size: .85rem; color: var(--accent); }
+  #send { display: flex; gap: .5rem; padding: .25rem .9rem .9rem; }
+
+  @media (max-width: 760px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; padding: .5rem; gap: .5rem; }
+    #side { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: .5rem; }
+    #side h2, .who, .join-info { display: none; }
+    .item { width: auto; flex: none; }
+    .msg { max-width: 88%; }
+  }
+  .msg div.file { opacity: .85; }
+  #joinErr { color: var(--danger); font-size: .85rem; min-height: 1.2rem; margin: 0; }
+  .hbtns { display: flex; gap: .5rem; }
+  .hbtns .ghost { padding: .4rem .75rem; font-size: .85rem; }
+</style>
+</head>
+<body>
+<section id="join">
+  <form id="joinForm">
+    <h1>LAN Chat</h1>
+    <p>Devices that enter the same room code can chat and share files directly with each other. No server needed.</p>
+    <input type="text" id="name" maxlength="24" placeholder="Your name" autocomplete="nickname" required>
+    <input type="text" id="room" maxlength="24" placeholder="Room code, e.g. home-wifi" autocomplete="off" required>
+    <p id="joinErr" role="alert"></p>
+    <button class="primary" type="submit">Join room</button>
+  </form>
+</section>
+
+<section id="app">
+  <aside id="side"></aside>
+  <div id="main">
+    <div id="head"></div>
+    <div id="log" aria-live="polite"></div>
+    <div id="status"></div>
+    <form id="send">
+      <button class="ghost" type="button" id="attach" title="Send files">Attach</button>
+      <input type="file" id="picker" multiple hidden>
+      <input type="text" id="text" maxlength="2000" placeholder="Write a message" autocomplete="off">
+      <button class="primary" type="submit" id="go">Send</button>
+    </form>
+  </div>
+</section>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" onerror="loadFallback()"></script>
+<script>
+  function loadFallback() {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
+    document.head.appendChild(s);
+  }
+</script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const GROUP = 'group', CHUNK = 64 * 1024;
+  const rid = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
+
+  let cid = localStorage.getItem('lanweb-cid');
+  if (!/^[a-f0-9]{16}$/.test(cid || '')) { cid = rid(8); localStorage.setItem('lanweb-cid', cid); }
+
+  function deviceLabel() {
+    const ua = navigator.userAgent;
+    const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'Device';
+    const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+    return br ? `${os} · ${br}` : os;
+  }
+
+  const me = { cid, name: '', device: deviceLabel() };
+  let room = '', peer = null, isHost = false, active = GROUP, attempts = 0, SKEY = '';
+  let connText = '', transferText = '';
+  const convs = { [GROUP]: [] };   // conversation key (GROUP or a device's cid) -> messages
+  const unread = {};
+  const peers = new Map();         // cid -> { name, device, pid, conn, online }
+  const conns = new Map();         // peer id -> DataConnection
+  const incoming = new Map();      // file id -> in-progress download
+
+  const cleanRoom = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
+  const hostId = () => `lanchat-v1-${room}`;
+
+  $('room').value = decodeURIComponent(location.hash.slice(1)) || localStorage.getItem('lanweb-room') || '';
+  $('name').value = localStorage.getItem('lanweb-name') || '';
+
+  $('joinForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (typeof Peer === 'undefined') { $('joinErr').textContent = 'Could not load the connection library. Check your internet connection and reload.'; return; }
+    room = cleanRoom($('room').value);
+    if (!room) { $('joinErr').textContent = 'Use letters or numbers in the room code.'; return; }
+    me.name = $('name').value.trim().slice(0, 24) || 'Guest';
+    localStorage.setItem('lanweb-name', me.name);
+    localStorage.setItem('lanweb-room', room);
+    location.hash = room;
+    SKEY = `lanweb-data-${room}-${cid}`;
+    load();
+    $('join').style.display = 'none';
+    $('app').style.display = 'grid';
+    setConn('Connecting…');
+    renderAll();
+    becomeHost();
+    $('text').focus();
+  });
+
+  // ---- Local storage history ----
+  function load() {
+    try {
+      const d = JSON.parse(localStorage.getItem(SKEY) || '{}');
+      Object.assign(convs, d.convs || {});
+      if (!convs[GROUP]) convs[GROUP] = [];
+      Object.entries(d.peers || {}).forEach(([id, p]) => peers.set(id, { ...p, online: false, conn: null }));
+    } catch {}
+  }
+  let saveTimer;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        const c = {}, p = {};
+        for (const [k, v] of Object.entries(convs)) c[k] = v.filter((m) => m.type !== 'system').slice(-300).map(({ url, ...rest }) => rest);
+        peers.forEach((v, id) => { p[id] = { name: v.name, device: v.device }; });
+        localStorage.setItem(SKEY, JSON.stringify({ convs: c, peers: p }));
+      } catch {}
+    }, 300);
+  }
+
+  // ---- Connection: the first device to claim the room id is the host and introduces everyone; devices then talk directly ----
+  function setConn(t) { connText = t; renderStatus(); }
+  function setTransfer(t) { transferText = t; renderStatus(); }
+  function renderStatus() { $('status').textContent = transferText || connText; }
+  function destroyPeer() { try { peer && peer.destroy(); } catch {} conns.clear(); }
+
+  function wirePeer(p) {
+    p.on('connection', (c) => setup(c));
+    p.on('disconnected', () => { try { p.reconnect(); } catch {} });
+  }
+  function peerError(err) {
+    if (err.type === 'peer-unavailable') return;
+    setConn(`Connection problem (${err.type}). Check your internet connection.`);
+  }
+
+  function becomeHost() {
+    destroyPeer();
+    isHost = true;
+    peer = new Peer(hostId());
+    wirePeer(peer);
+    peer.on('open', () => { attempts = 0; setConn(''); renderHead(); });
+    peer.on('error', (err) => (err.type === 'unavailable-id' ? joinAsGuest() : peerError(err)));
+  }
+
+  function joinAsGuest() {
+    destroyPeer();
+    isHost = false;
+    peer = new Peer(`${hostId()}-${rid(4)}`);
+    wirePeer(peer);
+    peer.on('open', () => connectTo(hostId()));
+    peer.on('error', (err) => {
+      if (err.type === 'peer-unavailable' && String(err.message).trim().endsWith(hostId())) {
+        // The host left while we were joining: try to take over the room.
+        if (++attempts < 4) setTimeout(becomeHost, 1000 + Math.random() * 1500);
+        else setConn('Could not reach the room. Check the code and your internet connection.');
+      } else peerError(err);
+    });
+  }
+
+  function connectTo(pid) {
+    if (!peer || pid === peer.id || conns.has(pid)) return;
+    const c = peer.connect(pid, { reliable: true });
+    setup(c);
+  }
+
+  function setup(c) {
+    conns.set(c.peer, c);
+    c.on('open', () => c.send({ t: 'hello', cid: me.cid, name: me.name, device: me.device, host: isHost }));
+    c.on('data', (d) => onData(c, d));
+    const gone = () => {
+      if (conns.get(c.peer) === c) conns.delete(c.peer);
+      for (const [fid, f] of incoming) if (f.cid === c.__cid) incoming.delete(fid);
+      const p = peers.get(c.__cid);
+      if (p && p.conn === c) {
+        p.online = false; p.conn = null;
+        sys(`${p.name} left`);
+        renderSide(); renderHead(); updateComposer();
+      }
+      // If the host disappeared, one of the remaining devices takes over the room.
+      if (c.__host && !isHost) {
+        setTimeout(() => {
+          if (![...conns.values()].some((x) => x.__host && x.open)) becomeHost();
+        }, 1000 + Math.random() * 2500);
+      }
+    };
+    c.on('close', gone);
+    c.on('error', gone);
+  }
+
+  function onData(c, d) {
+    if (!d || typeof d !== 'object') return;
+    if (d.t === 'hello') {
+      if (d.cid === me.cid || !/^[a-f0-9]{16}$/.test(String(d.cid))) { c.close(); return; }
+      c.__cid = d.cid;
+      c.__host = !!d.host;
+      const wasOnline = (peers.get(d.cid) || {}).online;
+      const name = String(d.name || 'Guest').slice(0, 24);
+      peers.set(d.cid, { name, device: String(d.device || '').slice(0, 40), pid: c.peer, conn: c, online: true });
+      if (!wasOnline) sys(`${name} joined`);
+      if (c.__host) { attempts = 0; setConn(''); }
+      if (isHost && !d.host) {
+        c.send({ t: 'peers', list: [...peers.values()].filter((p) => p.online && p.conn !== c).map((p) => p.pid) });
+      }
+      renderSide(); renderHead(); updateComposer(); save();
+      return;
+    }
+    if (!c.__cid) return;
+    const from = peers.get(c.__cid);
+
+    if (d.t === 'peers' && c.__host && Array.isArray(d.list)) {
+      d.list.slice(0, 50).forEach((pid) => typeof pid === 'string' && connectTo(pid));
+    } else if (d.t === 'msg') {
+      if (d.to && d.to !== me.cid) return;
+      const text = String(d.text || '').slice(0, 2000);
+      if (!text) return;
+      addMsg(d.to ? c.__cid : GROUP, { type: 'msg', from: from.name, fromId: c.__cid, to: d.to || null, text, time: Number(d.time) || Date.now() });
+    } else if (d.t === 'file-start') {
+      if (d.to && d.to !== me.cid) return;
+      incoming.set(d.fid, { cid: c.__cid, to: d.to || null, name: String(d.name || 'file').slice(0, 150), size: Number(d.size) || 0, got: 0, parts: [] });
+    } else if (d.t === 'file-chunk') {
+      const f = incoming.get(d.fid);
+      if (!f || f.cid !== c.__cid || !d.data) return;
+      f.parts.push(d.data);
+      f.got += d.data.byteLength;
+      setTransfer(`Receiving ${f.name}… ${f.size ? Math.round((f.got / f.size) * 100) : 0}%`);
+    } else if (d.t === 'file-end') {
+      const f = incoming.get(d.fid);
+      if (!f || f.cid !== c.__cid) return;
+      incoming.delete(d.fid);
+      setTransfer('');
+      addMsg(f.to ? c.__cid : GROUP, { type: 'file', from: from.name, fromId: c.__cid, to: f.to, name: f.name, size: f.got, time: Date.now(), url: URL.createObjectURL(new Blob(f.parts)) });
+    }
+  }
+
+  // ---- Avatars, sidebar, header ----
+  function hue(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+  function avatar(id, name, live) {
+    const a = document.createElement('span');
+    a.className = 'av' + (live ? ' live' : '');
+    const h = hue(id);
+    a.style.background = `linear-gradient(135deg, hsl(${h} 85% 62%), hsl(${(h + 50) % 360} 85% 52%))`;
+    a.textContent = (name || '?').trim().charAt(0).toUpperCase();
+    return a;
+  }
+  const onlineCount = () => [...peers.values()].filter((p) => p.online).length;
+
+  function renderSide() {
+    const side = $('side');
+    side.innerHTML = '';
+    const who = document.createElement('div');
+    who.className = 'who';
+    who.innerHTML = '<span class="txt"><b></b><small></small></span>';
+    who.prepend(avatar(me.cid, me.name, true));
+    who.querySelector('b').textContent = me.name + ' (you)';
+    who.querySelector('small').textContent = me.device;
+    side.appendChild(who);
+
+    side.appendChild(item(GROUP, 'Everyone', `${onlineCount() + 1} here`, true));
+    const others = [...peers.entries()].sort((a, b) => (b[1].online - a[1].online) || a[1].name.localeCompare(b[1].name));
+    if (others.length) { const h = document.createElement('h2'); h.textContent = 'Devices'; side.appendChild(h); }
+    others.forEach(([id, p]) => side.appendChild(item(id, p.name, p.online ? p.device : 'offline', p.online)));
+
+    const info = document.createElement('div');
+    info.className = 'join-info';
+    info.innerHTML = 'Room<br><b></b>';
+    info.querySelector('b').textContent = room;
+    side.appendChild(info);
+  }
+
+  function item(key, name, sub, online) {
+    const b = document.createElement('button');
+    b.className = 'item' + (online ? '' : ' off');
+    b.setAttribute('aria-current', key === active);
+    let av;
+    if (key === GROUP) { av = document.createElement('span'); av.className = 'av grp'; av.textContent = 'All'; }
+    else av = avatar(key, name, online);
+    b.appendChild(av);
+    const t = document.createElement('span');
+    t.className = 'txt';
+    t.innerHTML = '<span class="name"></span><span class="ip"></span>';
+    t.querySelector('.name').textContent = name;
+    t.querySelector('.ip').textContent = sub;
+    b.appendChild(t);
+    if (unread[key]) { const n = document.createElement('span'); n.className = 'badge'; n.textContent = unread[key]; b.appendChild(n); }
+    b.onclick = () => { active = key; unread[key] = 0; renderAll(); $('text').focus(); };
+    return b;
+  }
+
+  function renderHead() {
+    const h = $('head');
+    h.innerHTML = '<div><b></b><small></small></div><div class="hbtns"><button class="ghost" id="invite" type="button">Copy invite link</button><button class="ghost" id="clear" type="button">Clear chat</button></div>';
+    const [t, s] = [h.querySelector('b'), h.querySelector('small')];
+    if (active === GROUP) {
+      t.textContent = 'Everyone';
+      s.textContent = onlineCount() ? `${onlineCount() + 1} here` : 'Only you here. Share the invite link.';
+    } else {
+      const p = peers.get(active) || { name: 'Unknown', device: '', online: false };
+      t.textContent = p.name;
+      s.textContent = p.online ? `Private chat · ${p.device}` : 'Offline';
+    }
+    $('invite').onclick = async () => {
+      const url = location.origin + location.pathname + '#' + room;
+      try { await navigator.clipboard.writeText(url); $('invite').textContent = 'Copied'; setTimeout(() => ($('invite').textContent = 'Copy invite link'), 1500); }
+      catch { prompt('Copy this link:', url); }
+    };
+    $('clear').onclick = () => {
+      if (!confirm('Delete this chat from this browser?')) return;
+      convs[active] = [];
+      save(); renderAll();
+    };
+  }
+
+  function updateComposer() {
+    const off = active !== GROUP && !(peers.get(active) || {}).online;
+    ['text', 'go', 'attach'].forEach((id) => ($(id).disabled = off));
+    $('text').placeholder = off ? 'This device is offline' : 'Write a message';
+  }
+
+  function renderAll() {
+    renderSide(); renderHead(); updateComposer(); renderStatus();
+    $('log').innerHTML = '';
+    (convs[active] || []).forEach(appendMsg);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+
+  // ---- Messages ----
+  function sys(text) {
+    const m = { type: 'system', text, time: Date.now() };
+    convs[GROUP].push(m);
+    if (active === GROUP) appendMsg(m);
+  }
+
+  function addMsg(key, m) {
+    (convs[key] = convs[key] || []).push(m);
+    if (key === active) appendMsg(m);
+    else { unread[key] = (unread[key] || 0) + 1; renderSide(); }
+    save();
+  }
+
+  function appendMsg(m) {
+    const log = $('log');
+    const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    let el;
+    if (m.type === 'system') {
+      el = document.createElement('div');
+      el.className = 'sys'; el.textContent = m.text;
+    } else {
+      const mine = m.fromId === me.cid;
+      el = document.createElement('div');
+      el.className = 'row' + (mine ? ' mine' : '');
+      const bubble = document.createElement('div');
+      bubble.className = 'msg';
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = `${mine ? 'You' : m.from} · ${new Date(m.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const body = document.createElement('div');
+      if (m.type === 'file') {
+        const wrap = m.url ? document.createElement('a') : document.createElement('div');
+        wrap.className = 'file';
+        if (m.url) { wrap.href = m.url; wrap.setAttribute('download', m.name); }
+        const w = document.createElement('span');
+        const n = document.createElement('span'); n.textContent = m.name;
+        const s = document.createElement('div'); s.className = 'size';
+        s.textContent = fmtSize(m.size) + (m.url ? '' : ' · file is not kept after the page is closed');
+        w.append(n, s); wrap.appendChild(w);
+        body.appendChild(wrap);
+      } else {
+        body.textContent = m.text;
+      }
+      bubble.append(meta, body);
+      if (!mine) el.appendChild(avatar(m.fromId, m.from));
+      el.appendChild(bubble);
+    }
+    log.appendChild(el);
+    if (stick || m.fromId === me.cid) log.scrollTop = log.scrollHeight;
+  }
+
+  function note(text, isErr) {
+    const el = document.createElement('div');
+    el.className = 'sys' + (isErr ? ' err' : '');
+    el.textContent = text;
+    $('log').appendChild(el);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+
+  // Live connections for a conversation: one device for a private chat, everyone for the group.
+  function targets(to) {
+    const list = to ? [peers.get(to)] : [...peers.values()];
+    return list.filter((p) => p && p.online && p.conn && p.conn.open);
+  }
+
+  $('send').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = $('text').value.trim();
+    if (!text) return;
+    const to = active === GROUP ? null : active;
+    const live = targets(to);
+    if (to && !live.length) { note('That device is offline. Message not delivered.', true); return; }
+    const time = Date.now();
+    live.forEach((p) => p.conn.send({ t: 'msg', to, text, time }));
+    addMsg(active, { type: 'msg', from: me.name, fromId: me.cid, to, text, time });
+    $('text').value = '';
+  });
+
+  // ---- Files: sent in chunks straight to the other device(s) ----
+  $('attach').onclick = () => $('picker').click();
+  $('picker').onchange = (e) => { sendFiles([...e.target.files]); e.target.value = ''; };
+  ['dragover', 'dragenter'].forEach((t) => $('log').addEventListener(t, (e) => { e.preventDefault(); $('log').classList.add('drop'); }));
+  ['dragleave', 'drop'].forEach((t) => $('log').addEventListener(t, () => $('log').classList.remove('drop')));
+  $('log').addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!$('attach').disabled) sendFiles([...e.dataTransfer.files]);
+  });
+
+  function drained(conn) {
+    return new Promise((resolve) => {
+      const dc = conn.dataChannel;
+      if (!dc || dc.bufferedAmount < 4e6) return resolve();
+      const iv = setInterval(() => {
+        if (dc.bufferedAmount < 1e6 || dc.readyState !== 'open') { clearInterval(iv); resolve(); }
+      }, 50);
+    });
+  }
+
+  async function sendFiles(files) {
+    const key = active, to = active === GROUP ? null : active;
+    for (const f of files) {
+      const live = targets(to);
+      if (!live.length) { note(to ? 'That device is offline.' : 'Nobody else is here yet.', true); break; }
+      try {
+        const fid = rid(8);
+        live.forEach((p) => p.conn.send({ t: 'file-start', fid, to, name: f.name, size: f.size }));
+        for (let off = 0; off < f.size; off += CHUNK) {
+          const buf = await f.slice(off, off + CHUNK).arrayBuffer();
+          for (const p of live) { await drained(p.conn); if (p.conn.open) p.conn.send({ t: 'file-chunk', fid, data: buf }); }
+          setTransfer(`Sending ${f.name}… ${Math.round((Math.min(off + CHUNK, f.size) / f.size) * 100)}%`);
+        }
+        live.forEach((p) => p.conn.open && p.conn.send({ t: 'file-end', fid }));
+        addMsg(key, { type: 'file', from: me.name, fromId: me.cid, to, name: f.name, size: f.size, time: Date.now(), url: URL.createObjectURL(f) });
+      } catch (err) {
+        note(`Could not send ${f.name}.`, true);
+      }
+    }
+    setTransfer('');
+  }
+
+  function fmtSize(n) {
+    if (n < 1024) return `${n} B`;
+    const u = ['KB', 'MB', 'GB']; let i = -1;
+    do { n /= 1024; i++; } while (n >= 1024 && i < 2);
+    return `${n.toFixed(n < 10 ? 1 : 0)} ${u[i]}`;
+  }
+</script>
+</body>
+</html>
