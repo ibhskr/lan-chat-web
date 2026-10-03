@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>LAN Chat</title>
+<title>LAN-ChaT</title>
 <style>
   :root { --bg:#0e1014; --panel:#14171d; --soft:#1b1f29; --ink:#eceef5; --muted:#8a90a6; --line:#242836; --accent:#7c6cff; --on:#2ee6a6; --danger:#ff6b8a; }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f7f7fb; --panel:#ffffff; --soft:#eef0f7; --ink:#171a26; --muted:#6a7089; --line:#e1e4ef; --accent:#5b4bff; --danger:#d6335f; }
+    :root { --bg:#f7f7fb; --panel:#ffffff; --soft:#eef0f7; --ink:#171a26; --muted:#6a7089; --line:#e1e4ef; --accent:#5b4bff; --on:#0f9d6e; --danger:#d6335f; }
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body { font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
   button, input { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; }
 
   #join { height: 100%; display: grid; place-items: center; padding: 1rem; }
   #join form { width: min(20rem, 100%); display: grid; gap: .8rem; }
@@ -26,41 +26,44 @@
   input[type=text]:focus { border-color: var(--accent); outline: none; }
   button.primary { padding: .7rem 1.1rem; border: 0; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
   button.primary:hover { filter: brightness(1.1); }
-  button.ghost { padding: .65rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: transparent; cursor: pointer; }
+  button.ghost { padding: .55rem .9rem; border: 1px solid var(--line); border-radius: 10px; background: transparent; cursor: pointer; }
   button.ghost:hover { border-color: var(--accent); }
   button:disabled, input:disabled { opacity: .45; cursor: not-allowed; }
 
-  #app { height: 100%; display: none; }
-  #main { display: grid; grid-template-rows: auto 1fr auto auto; height: 100%; width: 100%; max-width: 52rem; margin: 0 auto; }
-  #head { display: flex; align-items: center; gap: .6rem; padding: .55rem .8rem; border-bottom: 1px solid var(--line); }
-  #head .title { flex: 1; min-width: 0; }
-  #head b { display: block; line-height: 1.2; }
-  #head small { display: block; color: var(--muted); font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .icon { position: relative; flex: none; width: 2.4rem; height: 2.4rem; border: 0; border-radius: 10px; background: transparent; font-size: 1.25rem; cursor: pointer; display: grid; place-items: center; }
-  .icon:hover { background: var(--soft); }
-  .icon.txt { width: auto; padding: 0 .7rem; font-size: .85rem; color: var(--muted); }
-  .icon .dot { position: absolute; top: .4rem; right: .4rem; width: .55rem; height: .55rem; border-radius: 50%; background: var(--accent); }
-  .icon .dot[hidden] { display: none; }
+  #app { height: 100%; display: none; grid-template-rows: minmax(0, 1fr); }
 
-  #scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 10; }
-  #side { position: fixed; top: 0; bottom: 0; left: 0; width: min(18rem, 86vw); z-index: 11; background: var(--panel); border-right: 1px solid var(--line); padding: 1rem .6rem; overflow-y: auto; display: flex; flex-direction: column; gap: .15rem; transform: translateX(-100%); visibility: hidden; transition: transform .2s, visibility 0s .2s; }
-  #app.open #scrim { opacity: 1; pointer-events: auto; }
-  #app.open #side { transform: none; visibility: visible; transition: transform .2s; }
-  #side h2 { margin: .9rem .6rem .3rem; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-  #side .me { margin-top: auto; padding: .6rem; font-size: .82rem; color: var(--muted); border-top: 1px solid var(--line); }
-
-  .av { flex: none; width: 2.1rem; height: 2.1rem; border-radius: 50%; display: grid; place-items: center; font-weight: 600; color: #fff; font-size: .9rem; position: relative; }
-  .av.grp { background: var(--soft); color: var(--muted); font-size: .7rem; }
-  .av.live::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: .65rem; height: .65rem; border-radius: 50%; background: var(--on); border: 2px solid var(--panel); }
-  .item { display: flex; align-items: center; gap: .65rem; width: 100%; text-align: left; padding: .5rem .6rem; border: 0; border-radius: 10px; background: transparent; cursor: pointer; }
-  .item:hover { background: var(--soft); }
-  .item[aria-current=true] { background: var(--soft); box-shadow: inset 3px 0 0 var(--accent); }
-  .item.off { opacity: .5; }
-  .item .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .item .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item .ip { font-size: .8rem; color: var(--muted); }
+  /* Home */
+  #home { height: 100%; display: none; flex-direction: column; width: 100%; max-width: 52rem; margin: 0 auto; }
+  .banner { flex: 0 0 30%; min-height: 9rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem; text-align: center; padding: 1rem; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .banner h1 { margin: 0; font-size: clamp(2.2rem, 9vw, 3.4rem); letter-spacing: -.02em; color: var(--accent); }
+  .banner p { margin: 0; font-size: .88rem; color: var(--muted); }
+  .banner code { color: var(--ink); }
+  #hstatus { color: var(--accent); min-height: 1.2rem; }
+  #list { flex: 1; overflow-y: auto; padding: .5rem; }
+  .u { display: flex; align-items: center; gap: .7rem; width: 100%; text-align: left; padding: .65rem .6rem; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+  .u:hover { background: var(--soft); }
+  .u .num { flex: none; width: 1.4rem; text-align: right; color: var(--muted); font-size: .85rem; }
+  .u .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .u .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .u .sub { font-size: .82rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .u .sub code { color: var(--ink); font-weight: 600; }
+  .u.off .name, .u.off .av { opacity: .55; }
+  .st { flex: none; display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; color: var(--muted); }
+  .st::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); }
+  .st.on { color: var(--on); }
+  .st.on::before { background: var(--on); }
   .badge { background: var(--accent); color: #fff; font-size: .72rem; font-weight: 700; min-width: 1.3rem; text-align: center; padding: .05rem .4rem; border-radius: 999px; }
+  .hint { margin: .75rem .6rem; font-size: .8rem; color: var(--muted); }
+  .av { flex: none; width: 2.2rem; height: 2.2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 600; color: #fff; font-size: .9rem; }
+  .av.grp { background: var(--soft); color: var(--muted); font-size: .7rem; }
 
+  /* Chat */
+  #main { display: none; grid-template-rows: auto 1fr auto auto; height: 100%; width: 100%; max-width: 52rem; margin: 0 auto; }
+  #head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .6rem .9rem; border-bottom: 1px solid var(--line); }
+  #head .who { min-width: 0; }
+  #head b { display: block; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #head small { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; color: var(--muted); font-size: .82rem; }
+  #head small code { color: var(--ink); font-weight: 600; }
   #log { overflow-y: auto; padding: 1rem .9rem; display: flex; flex-direction: column; gap: .5rem; }
   #log.drop { outline: 2px dashed var(--accent); outline-offset: -8px; }
   .row { display: flex; align-items: flex-end; gap: .5rem; }
@@ -84,7 +87,7 @@
 <body>
 <section id="join">
   <form id="joinForm">
-    <h1>LAN Chat</h1>
+    <h1>LAN-ChaT</h1>
     <p>Chat and share files with other devices on your network. Everyone joins the same room automatically.</p>
     <input type="text" id="name" maxlength="24" placeholder="Your name" autocomplete="nickname" required>
     <p id="joinErr" role="alert"></p>
@@ -93,8 +96,14 @@
 </section>
 
 <section id="app">
-  <div id="scrim"></div>
-  <aside id="side" aria-label="Chats and people"></aside>
+  <div id="home">
+    <header class="banner">
+      <h1>LAN-ChaT</h1>
+      <p id="you"></p>
+      <p id="hstatus" role="status"></p>
+    </header>
+    <div id="list"></div>
+  </div>
   <div id="main">
     <div id="head"></div>
     <div id="log" aria-live="polite"></div>
@@ -132,7 +141,7 @@
   }
 
   const me = { cid, name: '', device: deviceLabel() };
-  let room = '', peer = null, isHost = false, active = GROUP, attempts = 0, SKEY = '';
+  let room = '', peer = null, isHost = false, active = GROUP, attempts = 0, SKEY = '', view = 'home', myIp = '';
   let connText = '', transferText = '';
   const convs = { [GROUP]: [] };   // conversation key (GROUP or a device's cid) -> messages
   const unread = {};
@@ -160,13 +169,37 @@
     return '';
   }
 
-  function setSide(open) {
-    $('app').classList.toggle('open', open);
-    const m = $('menu');
-    if (m) m.setAttribute('aria-expanded', String(open));
+  // ---- Screens: home (list of people) and chat ----
+  function openChat(key) {
+    active = key; unread[key] = 0; view = 'chat';
+    try { history.pushState({ chat: 1 }, ''); } catch {}
+    renderAll();
+    if (matchMedia('(pointer: fine)').matches) $('text').focus();
   }
-  $('scrim').addEventListener('click', () => setSide(false));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSide(false); });
+  function showHome() { view = 'home'; renderAll(); }
+  function goHome() { if (history.state && history.state.chat) history.back(); else showHome(); }
+  window.addEventListener('popstate', () => { if (view === 'chat') showHome(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && view === 'chat') goHome(); });
+
+  // Private IP addresses: browsers often hide them. When the connection to a device is a direct local one,
+  // the connection statistics can reveal it, so we read it from there (best effort).
+  const isPrivate = (ip) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip) || /^(fe80|fd|fc)/i.test(ip);
+  async function detectIps(c) {
+    try {
+      const stats = await c.peerConnection.getStats();
+      let pair = null;
+      stats.forEach((s) => { if (s.type === 'transport' && s.selectedCandidatePairId) pair = stats.get(s.selectedCandidatePairId); });
+      if (!pair) stats.forEach((s) => { if (s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded') pair = s; });
+      if (!pair) return;
+      const r = stats.get(pair.remoteCandidateId), l = stats.get(pair.localCandidateId);
+      const pick = (x) => (x && ['host', 'prflx'].includes(x.candidateType) ? (x.address || x.ip || '') : '');
+      const rip = pick(r), lip = pick(l);
+      const p = peers.get(c.__cid);
+      if (p && p.pid === c.peer && isPrivate(rip)) p.ip = rip;
+      if (isPrivate(lip)) myIp = lip;
+      renderHome(); renderHead(); save();
+    } catch {}
+  }
 
   $('joinForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -205,7 +238,7 @@
       try {
         const c = {}, p = {};
         for (const [k, v] of Object.entries(convs)) c[k] = v.filter((m) => m.type !== 'system').slice(-300).map(({ url, ...rest }) => rest);
-        peers.forEach((v, id) => { p[id] = { name: v.name, device: v.device }; });
+        peers.forEach((v, id) => { p[id] = { name: v.name, device: v.device, ip: v.ip || '' }; });
         localStorage.setItem(SKEY, JSON.stringify({ convs: c, peers: p }));
       } catch {}
     }, 300);
@@ -214,7 +247,7 @@
   // ---- Connection: the first device to claim the room id is the host and introduces everyone; devices then talk directly ----
   function setConn(t) { connText = t; renderStatus(); }
   function setTransfer(t) { transferText = t; renderStatus(); }
-  function renderStatus() { $('status').textContent = transferText || connText; }
+  function renderStatus() { $('status').textContent = $('hstatus').textContent = transferText || connText; }
   function destroyPeer() { try { peer && peer.destroy(); } catch {} conns.clear(); }
 
   function wirePeer(p) {
@@ -266,7 +299,7 @@
       if (p && p.conn === c) {
         p.online = false; p.conn = null;
         sys(`${p.name} left`);
-        renderSide(); renderHead(); updateComposer();
+        renderHome(); renderHead(); updateComposer();
       }
       // If the host disappeared, one of the remaining devices takes over the room.
       if (c.__host && !isHost) {
@@ -287,13 +320,15 @@
       c.__host = !!d.host;
       const wasOnline = (peers.get(d.cid) || {}).online;
       const name = String(d.name || 'Guest').slice(0, 24);
-      peers.set(d.cid, { name, device: String(d.device || '').slice(0, 40), pid: c.peer, conn: c, online: true });
+      peers.set(d.cid, { name, device: String(d.device || '').slice(0, 40), pid: c.peer, conn: c, online: true, ip: (peers.get(d.cid) || {}).ip || '' });
+      detectIps(c);
+      setTimeout(() => detectIps(c), 2000);
       if (!wasOnline) sys(`${name} joined`);
       if (c.__host) { attempts = 0; setConn(''); }
       if (isHost && !d.host) {
         c.send({ t: 'peers', list: [...peers.values()].filter((p) => p.online && p.conn !== c).map((p) => p.pid) });
       }
-      renderSide(); renderHead(); updateComposer(); save();
+      renderHome(); renderHead(); updateComposer(); save();
       return;
     }
     if (!c.__cid) return;
@@ -322,59 +357,76 @@
   }
   const onlineCount = () => [...peers.values()].filter((p) => p.online).length;
 
-  function renderSide() {
-    const side = $('side');
-    side.innerHTML = '';
-    side.appendChild(item(GROUP, 'Everyone', onlineCount() ? `${onlineCount() + 1} here` : 'Just you', true));
-    const others = [...peers.entries()].sort((a, b) => (b[1].online - a[1].online) || a[1].name.localeCompare(b[1].name));
-    if (others.length) { const h = document.createElement('h2'); h.textContent = 'People'; side.appendChild(h); }
-    others.forEach(([id, p]) => side.appendChild(item(id, p.name, p.online ? p.device : 'offline', p.online)));
-    const you = document.createElement('div');
-    you.className = 'me';
-    you.textContent = `You: ${me.name} · ${me.device}`;
-    side.appendChild(you);
+  function statusEl(online, label) {
+    const s = document.createElement('span');
+    s.className = 'st ' + (online ? 'on' : 'off');
+    s.textContent = label || (online ? 'Online' : 'Offline');
+    return s;
   }
 
-  function item(key, name, sub, online) {
+  function row(key, num, name, p, online, sub) {
     const b = document.createElement('button');
-    b.className = 'item' + (online ? '' : ' off');
-    b.setAttribute('aria-current', key === active);
+    b.className = 'u' + (online ? '' : ' off');
+    const n = document.createElement('span');
+    n.className = 'num'; n.textContent = num == null ? '' : num;
     let av;
     if (key === GROUP) { av = document.createElement('span'); av.className = 'av grp'; av.textContent = 'All'; }
-    else av = avatar(key, name, online);
-    b.appendChild(av);
+    else av = avatar(key, name);
     const t = document.createElement('span');
     t.className = 'txt';
-    t.innerHTML = '<span class="name"></span><span class="ip"></span>';
-    t.querySelector('.name').textContent = name;
-    t.querySelector('.ip').textContent = sub;
-    b.appendChild(t);
-    if (unread[key]) { const n = document.createElement('span'); n.className = 'badge'; n.textContent = unread[key]; b.appendChild(n); }
-    b.onclick = () => { active = key; unread[key] = 0; setSide(false); renderAll(); };
+    const nm = document.createElement('span');
+    nm.className = 'name'; nm.textContent = name;
+    const l2 = document.createElement('span');
+    l2.className = 'sub';
+    if (p) {
+      const ip = document.createElement('code');
+      ip.textContent = p.ip || 'IP unavailable';
+      l2.append(ip, document.createTextNode(p.device ? ` · ${p.device}` : ''));
+    } else {
+      l2.textContent = sub;
+    }
+    t.append(nm, l2);
+    b.append(n, av, t);
+    if (unread[key]) { const u = document.createElement('span'); u.className = 'badge'; u.textContent = unread[key]; b.appendChild(u); }
+    b.appendChild(key === GROUP ? statusEl(onlineCount() > 0, `${onlineCount() + 1} here`) : statusEl(online));
+    b.onclick = () => openChat(key);
     return b;
+  }
+
+  function renderHome() {
+    const you = $('you');
+    you.innerHTML = '';
+    const yip = document.createElement('code');
+    yip.textContent = myIp || 'IP unavailable';
+    you.append(document.createTextNode(`You: ${me.name} · ${me.device} · `), yip);
+
+    const list = $('list');
+    list.innerHTML = '';
+    list.appendChild(row(GROUP, null, 'Everyone', null, true, 'Group chat'));
+    const others = [...peers.entries()].sort((a, b) => (b[1].online - a[1].online) || a[1].name.localeCompare(b[1].name));
+    others.forEach(([id, p], i) => list.appendChild(row(id, i + 1, p.name, p, p.online)));
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    if (!others.length) hint.textContent = 'No other devices yet. Open this page on another device on the same network and join.';
+    else if (others.some(([, p]) => p.online && !p.ip)) hint.textContent = 'Some browsers hide local IP addresses for privacy, so an IP can show as unavailable.';
+    if (hint.textContent) list.appendChild(hint);
   }
 
   function renderHead() {
     const h = $('head');
-    h.innerHTML = '<button class="icon" id="menu" type="button" aria-label="Show chats and people" aria-expanded="false">☰<i class="dot" hidden></i></button><div class="title"><b></b><small></small></div><button class="icon txt" id="clear" type="button">Clear</button>';
-    const [t, s] = [h.querySelector('b'), h.querySelector('small')];
+    h.innerHTML = '<div class="who"><b></b><small></small></div><button class="ghost" id="back" type="button">Back</button>';
+    const t = h.querySelector('b'), s = h.querySelector('small');
     if (active === GROUP) {
       t.textContent = 'Everyone';
-      const names = [...peers.values()].filter((p) => p.online).map((p) => p.name);
-      s.textContent = names.length ? ['You', ...names].join(', ') : 'Waiting for other devices';
+      s.appendChild(statusEl(onlineCount() > 0, `${onlineCount() + 1} here`));
     } else {
-      const p = peers.get(active) || { name: 'Unknown', device: '', online: false };
+      const p = peers.get(active) || { name: 'Unknown', online: false, ip: '' };
       t.textContent = p.name;
-      s.textContent = p.online ? `${p.device} · private chat` : 'Offline';
+      const ip = document.createElement('code');
+      ip.textContent = p.ip || 'IP unavailable';
+      s.append(statusEl(p.online), document.createTextNode(' · '), ip);
     }
-    h.querySelector('.dot').hidden = !Object.entries(unread).some(([k, v]) => v && k !== active);
-    $('menu').setAttribute('aria-expanded', String($('app').classList.contains('open')));
-    $('menu').onclick = () => setSide(!$('app').classList.contains('open'));
-    $('clear').onclick = () => {
-      if (!confirm('Delete this chat from this browser?')) return;
-      convs[active] = [];
-      save(); renderAll();
-    };
+    $('back').onclick = goHome;
   }
 
   function updateComposer() {
@@ -384,7 +436,11 @@
   }
 
   function renderAll() {
-    renderSide(); renderHead(); updateComposer(); renderStatus();
+    const chat = view === 'chat';
+    $('home').style.display = chat ? 'none' : 'flex';
+    $('main').style.display = chat ? 'grid' : 'none';
+    renderHome(); renderHead(); updateComposer(); renderStatus();
+    if (!chat) return;
     $('log').innerHTML = '';
     (convs[active] || []).forEach(appendMsg);
     if (active === GROUP && !onlineCount() && !(convs[GROUP] || []).some((m) => m.type !== 'system')) {
@@ -400,13 +456,13 @@
   function sys(text) {
     const m = { type: 'system', text, time: Date.now() };
     convs[GROUP].push(m);
-    if (active === GROUP) appendMsg(m);
+    if (view === 'chat' && active === GROUP) appendMsg(m);
   }
 
   function addMsg(key, m) {
     (convs[key] = convs[key] || []).push(m);
-    if (key === active) appendMsg(m);
-    else { unread[key] = (unread[key] || 0) + 1; renderSide(); renderHead(); }
+    if (view === 'chat' && key === active) appendMsg(m);
+    else { unread[key] = (unread[key] || 0) + 1; renderHome(); }
     save();
   }
 
